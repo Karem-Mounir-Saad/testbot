@@ -1,0 +1,7 @@
+aiogram
+aiosqlite
+python-dotenv
+loguru
+apscheduler
+ruff
+httpx
