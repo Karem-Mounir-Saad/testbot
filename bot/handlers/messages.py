@@ -9,7 +9,7 @@ router = Router()
 settings = get_settings()
 
 
-@router.message(F.photo)
+@router.message(F.text)
 async def message_handler(message: Message) -> None:
     user_text = message.text or ""
     resolved = resolve_answer(user_text)
