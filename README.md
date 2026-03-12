@@ -5,6 +5,7 @@
 ## Project Goal
 
 This project is designed to build a Telegram bot that we answer three different questions like (how are you,how old are you , where are you from) and storing the answers in sqlite database with the username who ask
+Note: the bot has one command is /start
 
 ## Tech Stack / Dependencies
 
