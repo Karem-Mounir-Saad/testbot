@@ -15,16 +15,14 @@ settings = get_settings()
 def _questions_inline_keyboard() -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup(
         inline_keyboard=[
-            [InlineKeyboardButton(text="How are you?", callback_data="q:how_are_you")],
             [
+                InlineKeyboardButton(text="How are you?", callback_data="q:how_are_you"),
                 InlineKeyboardButton(
                     text="How old are you?", callback_data="q:how_old_are_you"
-                )
-            ],
-            [
+                ),
                 InlineKeyboardButton(
                     text="Where are you from?", callback_data="q:where_are_you_from"
-                )
+                ),
             ],
         ]
     )
