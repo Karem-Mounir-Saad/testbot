@@ -9,6 +9,7 @@ class Settings:
     bot_token: str
     db_path: str
     log_level: str
+    owner_id: int
 
 
 def _normalize_db_path(database_url: str) -> str:
@@ -28,5 +29,18 @@ def get_settings() -> Settings:
     database_url = os.getenv("DATABASE_URL", "sqlite:///bot.db").strip()
     db_path = _normalize_db_path(database_url)
     log_level = os.getenv("LOG_LEVEL", "INFO").upper().strip()
+    owner_id_raw = os.getenv("OWNER_ID", "").strip()
+    if not owner_id_raw:
+        raise ValueError("OWNER_ID is missing. Please set it in .env")
 
-    return Settings(bot_token=bot_token, db_path=db_path, log_level=log_level)
+    try:
+        owner_id = int(owner_id_raw)
+    except ValueError as exc:
+        raise ValueError("OWNER_ID must be an integer Telegram user id") from exc
+
+    return Settings(
+        bot_token=bot_token,
+        db_path=db_path,
+        log_level=log_level,
+        owner_id=owner_id,
+    )
