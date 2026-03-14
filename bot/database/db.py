@@ -12,6 +12,15 @@ class Route:
     last_forwarded_signature: str | None
 
 
+@dataclass(frozen=True)
+class MessageLink:
+    route_id: int
+    source_chat_id: int
+    source_message_id: int
+    destination_chat_id: int
+    destination_message_id: int
+
+
 CREATE_TABLES_SQL = [
     """
     CREATE TABLE IF NOT EXISTS routes (
@@ -45,8 +54,22 @@ CREATE_TABLES_SQL = [
         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
     );
     """,
+    """
+    CREATE TABLE IF NOT EXISTS message_links (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        route_id INTEGER NOT NULL,
+        source_chat_id INTEGER NOT NULL,
+        source_message_id INTEGER NOT NULL,
+        destination_chat_id INTEGER NOT NULL,
+        destination_message_id INTEGER NOT NULL,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        UNIQUE(route_id, source_chat_id, source_message_id)
+    );
+    """,
     "CREATE INDEX IF NOT EXISTS idx_routes_source_active ON routes(source_chat_id, is_active);",
     "CREATE INDEX IF NOT EXISTS idx_cache_chat_id ON message_cache(chat_id);",
+    "CREATE INDEX IF NOT EXISTS idx_links_source_message ON message_links(source_chat_id, source_message_id);",
 ]
 
 
@@ -230,3 +253,77 @@ async def insert_forward_log(
             ),
         )
         await db.commit()
+
+
+async def upsert_message_link(
+    db_path: str,
+    route_id: int,
+    source_chat_id: int,
+    source_message_id: int,
+    destination_chat_id: int,
+    destination_message_id: int,
+) -> None:
+    async with aiosqlite.connect(db_path) as db:
+        await db.execute(
+            """
+            INSERT INTO message_links (
+                route_id,
+                source_chat_id,
+                source_message_id,
+                destination_chat_id,
+                destination_message_id,
+                updated_at
+            )
+            VALUES (?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
+            ON CONFLICT(route_id, source_chat_id, source_message_id)
+            DO UPDATE SET
+                destination_chat_id = excluded.destination_chat_id,
+                destination_message_id = excluded.destination_message_id,
+                updated_at = CURRENT_TIMESTAMP
+            """,
+            (
+                route_id,
+                source_chat_id,
+                source_message_id,
+                destination_chat_id,
+                destination_message_id,
+            ),
+        )
+        await db.commit()
+
+
+async def get_message_link(
+    db_path: str,
+    route_id: int,
+    source_chat_id: int,
+    source_message_id: int,
+) -> MessageLink | None:
+    async with aiosqlite.connect(db_path) as db:
+        row = await (
+            await db.execute(
+                """
+                SELECT
+                    route_id,
+                    source_chat_id,
+                    source_message_id,
+                    destination_chat_id,
+                    destination_message_id
+                FROM message_links
+                WHERE route_id = ?
+                  AND source_chat_id = ?
+                  AND source_message_id = ?
+                """,
+                (route_id, source_chat_id, source_message_id),
+            )
+        ).fetchone()
+
+    if row is None:
+        return None
+
+    return MessageLink(
+        route_id=int(row[0]),
+        source_chat_id=int(row[1]),
+        source_message_id=int(row[2]),
+        destination_chat_id=int(row[3]),
+        destination_message_id=int(row[4]),
+    )
