@@ -1,4 +1,12 @@
 from aiogram import Bot
+from aiogram.types import (
+    InputMediaAnimation,
+    InputMediaAudio,
+    InputMediaDocument,
+    InputMediaPhoto,
+    InputMediaVideo,
+    Message,
+)
 from loguru import logger
 
 from bot.database.db import (
@@ -192,12 +200,94 @@ async def _replace_destination_copy_for_edit(
         )
 
 
+async def _try_inline_edit_for_link(
+    bot: Bot,
+    link: MessageLink,
+    source_message: Message,
+) -> bool:
+    media = None
+    if source_message.photo:
+        media = InputMediaPhoto(
+            media=source_message.photo[-1].file_id,
+            caption=source_message.caption,
+            caption_entities=source_message.caption_entities,
+        )
+    elif source_message.video:
+        media = InputMediaVideo(
+            media=source_message.video.file_id,
+            caption=source_message.caption,
+            caption_entities=source_message.caption_entities,
+        )
+    elif source_message.animation:
+        media = InputMediaAnimation(
+            media=source_message.animation.file_id,
+            caption=source_message.caption,
+            caption_entities=source_message.caption_entities,
+        )
+    elif source_message.document:
+        media = InputMediaDocument(
+            media=source_message.document.file_id,
+            caption=source_message.caption,
+            caption_entities=source_message.caption_entities,
+        )
+    elif source_message.audio:
+        media = InputMediaAudio(
+            media=source_message.audio.file_id,
+            caption=source_message.caption,
+            caption_entities=source_message.caption_entities,
+        )
+
+    try:
+        if media is not None:
+            await bot.edit_message_media(
+                chat_id=link.destination_chat_id,
+                message_id=link.destination_message_id,
+                media=media,
+            )
+            return True
+
+        if source_message.text is not None:
+            await bot.edit_message_text(
+                chat_id=link.destination_chat_id,
+                message_id=link.destination_message_id,
+                text=source_message.text,
+                entities=source_message.entities,
+            )
+            return True
+
+        if source_message.caption is not None:
+            await bot.edit_message_caption(
+                chat_id=link.destination_chat_id,
+                message_id=link.destination_message_id,
+                caption=source_message.caption,
+                caption_entities=source_message.caption_entities,
+            )
+            return True
+
+        return False
+    except Exception as exc:  # noqa: BLE001
+        if "message is not modified" in str(exc).lower():
+            return True
+        logger.warning(
+            "Inline edit failed for destination message {} in chat {}: {}",
+            link.destination_message_id,
+            link.destination_chat_id,
+            exc,
+        )
+        return False
+
+
 async def sync_edited_source_message(
     bot: Bot,
     db_path: str,
-    source_chat_id: int,
-    source_message_id: int,
+    source_message: Message,
 ) -> None:
+    if source_message.chat is None or source_message.message_id is None:
+        return
+
+    source_chat_id = source_message.chat.id
+    source_message_id = source_message.message_id
+
     logger.info(
         "Processing edited source message: source_chat_id={} message_id={}",
         source_chat_id,
@@ -224,6 +314,28 @@ async def sync_edited_source_message(
             )
             continue
 
+        edited_inline = await _try_inline_edit_for_link(
+            bot=bot,
+            link=link,
+            source_message=source_message,
+        )
+        if edited_inline:
+            await insert_forward_log(
+                db_path=db_path,
+                route_id=route.id,
+                source_chat_id=route.source_chat_id,
+                destination_chat_id=route.destination_chat_id,
+                message_ids=[source_message_id],
+                status="success",
+            )
+            logger.info(
+                "Inline-edited destination message {} for source message {} on route #{}",
+                link.destination_message_id,
+                source_message_id,
+                route.id,
+            )
+            continue
+
         await _replace_destination_copy_for_edit(
             bot=bot,
             db_path=db_path,
@@ -231,6 +343,8 @@ async def sync_edited_source_message(
             link=link,
             source_message_id=source_message_id,
         )
+
+
 
 
 

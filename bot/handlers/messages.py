@@ -58,8 +58,7 @@ async def listen_edited_group_messages(message: Message) -> None:
     await sync_edited_source_message(
         bot=message.bot,
         db_path=settings.db_path,
-        source_chat_id=message.chat.id,
-        source_message_id=message.message_id,
+        source_message=message,
     )
 
 
@@ -70,12 +69,11 @@ async def listen_edited_channel_posts(message: Message) -> None:
     logger.info(
         "Incoming edited_channel_post update: chat_id={} chat_type={} message_id={}",
         message.chat.id,
-        message.chat.type,
+        message.chat.type,          
         message.message_id,
     )
     await sync_edited_source_message(
         bot=message.bot,
         db_path=settings.db_path,
-        source_chat_id=message.chat.id,
-        source_message_id=message.message_id,
+        source_message=message,
     )
