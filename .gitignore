@@ -16,6 +16,8 @@ dist/
 
 # Environment variables / secrets
 .env
+*.session
+*.session-journal
 
 # Logs
 *.log

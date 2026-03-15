@@ -327,3 +327,56 @@ async def get_message_link(
         destination_chat_id=int(row[3]),
         destination_message_id=int(row[4]),
     )
+
+
+async def get_message_links_by_source_message(
+    db_path: str,
+    source_chat_id: int,
+    source_message_id: int,
+) -> list[MessageLink]:
+    async with aiosqlite.connect(db_path) as db:
+        rows = await (
+            await db.execute(
+                """
+                SELECT
+                    route_id,
+                    source_chat_id,
+                    source_message_id,
+                    destination_chat_id,
+                    destination_message_id
+                FROM message_links
+                WHERE source_chat_id = ?
+                  AND source_message_id = ?
+                """,
+                (source_chat_id, source_message_id),
+            )
+        ).fetchall()
+
+    return [
+        MessageLink(
+            route_id=int(row[0]),
+            source_chat_id=int(row[1]),
+            source_message_id=int(row[2]),
+            destination_chat_id=int(row[3]),
+            destination_message_id=int(row[4]),
+        )
+        for row in rows
+    ]
+
+
+async def delete_message_links_by_source_message(
+    db_path: str,
+    source_chat_id: int,
+    source_message_id: int,
+) -> int:
+    async with aiosqlite.connect(db_path) as db:
+        cursor = await db.execute(
+            """
+            DELETE FROM message_links
+            WHERE source_chat_id = ?
+              AND source_message_id = ?
+            """,
+            (source_chat_id, source_message_id),
+        )
+        await db.commit()
+        return int(cursor.rowcount)

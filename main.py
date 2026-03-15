@@ -1,5 +1,6 @@
 import asyncio
 import sys
+from contextlib import suppress
 
 from aiogram import Bot, Dispatcher
 from aiogram.client.default import DefaultBotProperties
@@ -10,6 +11,7 @@ from bot.config import get_settings
 from bot.database.db import init_db
 from bot.handlers.commands import router as commands_router
 from bot.handlers.messages import router as messages_router
+from bot.services.mtproto_listener import run_mtproto_delete_listener
 
 
 async def main() -> None:
@@ -28,10 +30,16 @@ async def main() -> None:
     dp.include_router(commands_router)
     dp.include_router(messages_router)
 
+    mtproto_task = asyncio.create_task(run_mtproto_delete_listener(bot, settings))
+
     logger.info("Bot is starting polling...")
     try:
         await dp.start_polling(bot)
     finally:
+        if not mtproto_task.done():
+            mtproto_task.cancel()
+            with suppress(asyncio.CancelledError):
+                await mtproto_task
         await bot.session.close()
 
 

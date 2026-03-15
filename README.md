@@ -60,6 +60,16 @@ Use `.env` (copied from `.env.example`):
 - `DATABASE_URL` — SQLite URL, e.g. `sqlite:///bot.db`
 - `LOG_LEVEL` — e.g. `INFO`
 
+Optional for realtime delete sync via Telethon (MTProto listener):
+
+- `TELETHON_API_ID` — app api id from https://my.telegram.org
+- `TELETHON_API_HASH` — app api hash from https://my.telegram.org
+- `TELETHON_SESSION` — local session file base name (default: `telethon_session`)
+- `TELETHON_WATCH_CHAT_IDS` — optional comma-separated source chat IDs filter
+
+> Note: install Telethon in your environment if you enable this listener:
+> `python -m pip install Telethon==1.42.0`
+
 ---
 
 ## Owner Commands

@@ -10,6 +10,8 @@ from aiogram.types import (
 from loguru import logger
 
 from bot.database.db import (
+    delete_message_links_by_source_message,
+    get_message_links_by_source_message,
     MessageLink,
     Route,
     cache_message,
@@ -343,6 +345,67 @@ async def sync_edited_source_message(
             link=link,
             source_message_id=source_message_id,
         )
+
+
+async def delete_copies_for_source_message(
+    bot: Bot,
+    db_path: str,
+    source_chat_id: int,
+    source_message_id: int,
+) -> None:
+    links = await get_message_links_by_source_message(
+        db_path=db_path,
+        source_chat_id=source_chat_id,
+        source_message_id=source_message_id,
+    )
+    if not links:
+        logger.info(
+            "No destination copies found for deleted source message {} in chat {}",
+            source_message_id,
+            source_chat_id,
+        )
+        return
+
+    logger.info(
+        "Deleting {} mapped destination copies for deleted source message {} in chat {}",
+        len(links),
+        source_message_id,
+        source_chat_id,
+    )
+
+    for link in links:
+        try:
+            await bot.delete_message(
+                chat_id=link.destination_chat_id,
+                message_id=link.destination_message_id,
+            )
+            logger.info(
+                "Deleted mapped copy message {} in destination chat {} (route #{})",
+                link.destination_message_id,
+                link.destination_chat_id,
+                link.route_id,
+            )
+        except Exception as exc:  # noqa: BLE001
+            logger.warning(
+                "Failed deleting mapped copy message {} in destination chat {} (route #{}): {}",
+                link.destination_message_id,
+                link.destination_chat_id,
+                link.route_id,
+                exc,
+            )
+
+    removed = await delete_message_links_by_source_message(
+        db_path=db_path,
+        source_chat_id=source_chat_id,
+        source_message_id=source_message_id,
+    )
+    logger.info(
+        "Removed {} message_links rows for deleted source message {} in chat {}",
+        removed,
+        source_message_id,
+        source_chat_id,
+    )
+
 
 
 
