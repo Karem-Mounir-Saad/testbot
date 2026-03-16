@@ -8,6 +8,8 @@ class Route:
     id: int
     source_chat_id: int
     destination_chat_id: int
+    source_topic_id: int | None
+    destination_topic_id: int | None
     is_active: bool
     last_forwarded_signature: str | None
 
@@ -21,16 +23,25 @@ class MessageLink:
     destination_message_id: int
 
 
+def _normalize_topic_id(value: int | None) -> int | None:
+    # Backward compatibility: older data/commands sometimes stored 0 for "no topic".
+    if value in (None, 0):
+        return None
+    return int(value)
+
+
 CREATE_TABLES_SQL = [
     """
     CREATE TABLE IF NOT EXISTS routes (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         source_chat_id INTEGER NOT NULL,
         destination_chat_id INTEGER NOT NULL,
+        source_topic_id INTEGER,
+        destination_topic_id INTEGER,
         is_active INTEGER NOT NULL DEFAULT 1,
         last_forwarded_signature TEXT,
         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-        UNIQUE(source_chat_id, destination_chat_id)
+        UNIQUE(source_chat_id, destination_chat_id, source_topic_id, destination_topic_id)
     );
     """,
     """
@@ -73,38 +84,113 @@ CREATE_TABLES_SQL = [
 ]
 
 
+async def _ensure_routes_topic_columns(db: aiosqlite.Connection) -> None:
+    rows = await (await db.execute("PRAGMA table_info(routes)")).fetchall()
+    columns = {str(row[1]) for row in rows}
+
+    if "source_topic_id" not in columns:
+        await db.execute("ALTER TABLE routes ADD COLUMN source_topic_id INTEGER")
+    if "destination_topic_id" not in columns:
+        await db.execute("ALTER TABLE routes ADD COLUMN destination_topic_id INTEGER")
+
+    # Backward compatibility: normalize legacy "0 means no topic" rows.
+    await db.execute("UPDATE routes SET source_topic_id = NULL WHERE source_topic_id = 0")
+    await db.execute(
+        "UPDATE routes SET destination_topic_id = NULL WHERE destination_topic_id = 0"
+    )
+
+
 async def init_db(db_path: str) -> None:
     async with aiosqlite.connect(db_path) as db:
         for statement in CREATE_TABLES_SQL:
             await db.execute(statement)
+        await _ensure_routes_topic_columns(db)
         await db.commit()
 
 
-async def add_route(db_path: str, source_chat_id: int, destination_chat_id: int) -> int:
+def _route_from_row(row: tuple) -> Route:
+    return Route(
+        id=int(row[0]),
+        source_chat_id=int(row[1]),
+        destination_chat_id=int(row[2]),
+        source_topic_id=_normalize_topic_id(
+            None if row[3] is None else int(row[3])
+        ),
+        destination_topic_id=_normalize_topic_id(
+            None if row[4] is None else int(row[4])
+        ),
+        is_active=bool(row[5]),
+        last_forwarded_signature=row[6],
+    )
+
+
+async def add_route(
+    db_path: str,
+    source_chat_id: int,
+    destination_chat_id: int,
+    source_topic_id: int | None = None,
+    destination_topic_id: int | None = None,
+) -> int:
+    source_topic_id = _normalize_topic_id(source_topic_id)
+    destination_topic_id = _normalize_topic_id(destination_topic_id)
+
     async with aiosqlite.connect(db_path) as db:
-        cursor = await db.execute(
-            """
-            INSERT INTO routes (source_chat_id, destination_chat_id)
-            VALUES (?, ?)
-            ON CONFLICT(source_chat_id, destination_chat_id)
-            DO UPDATE SET is_active = 1
-            """,
-            (source_chat_id, destination_chat_id),
-        )
-        await db.commit()
-        if cursor.lastrowid:
-            return int(cursor.lastrowid)
-
-        row = await (
+        existing = await (
             await db.execute(
                 """
                 SELECT id FROM routes
-                WHERE source_chat_id = ? AND destination_chat_id = ?
+                WHERE source_chat_id = ?
+                  AND destination_chat_id = ?
+                  AND (
+                    ((source_topic_id IS NULL OR source_topic_id = 0) AND ? IS NULL)
+                    OR source_topic_id = ?
+                  )
+                  AND (
+                    ((destination_topic_id IS NULL OR destination_topic_id = 0) AND ? IS NULL)
+                    OR destination_topic_id = ?
+                  )
+                LIMIT 1
                 """,
-                (source_chat_id, destination_chat_id),
+                (
+                    source_chat_id,
+                    destination_chat_id,
+                    source_topic_id,
+                    source_topic_id,
+                    destination_topic_id,
+                    destination_topic_id,
+                ),
             )
         ).fetchone()
-        return int(row[0])
+
+        if existing is not None:
+            route_id = int(existing[0])
+            await db.execute(
+                """
+                UPDATE routes
+                SET is_active = 1,
+                    source_topic_id = ?,
+                    destination_topic_id = ?
+                WHERE id = ?
+                """,
+                (source_topic_id, destination_topic_id, route_id),
+            )
+            await db.commit()
+            return route_id
+
+        cursor = await db.execute(
+            """
+            INSERT INTO routes (
+                source_chat_id,
+                destination_chat_id,
+                source_topic_id,
+                destination_topic_id
+            )
+            VALUES (?, ?, ?, ?)
+            """,
+            (source_chat_id, destination_chat_id, source_topic_id, destination_topic_id),
+        )
+        await db.commit()
+        return int(cursor.lastrowid)
 
 
 async def list_routes(db_path: str) -> list[Route]:
@@ -112,22 +198,20 @@ async def list_routes(db_path: str) -> list[Route]:
         rows = await (
             await db.execute(
                 """
-                SELECT id, source_chat_id, destination_chat_id, is_active, last_forwarded_signature
+                SELECT
+                    id,
+                    source_chat_id,
+                    destination_chat_id,
+                    source_topic_id,
+                    destination_topic_id,
+                    is_active,
+                    last_forwarded_signature
                 FROM routes
                 ORDER BY id ASC
                 """
             )
         ).fetchall()
-    return [
-        Route(
-            id=row[0],
-            source_chat_id=row[1],
-            destination_chat_id=row[2],
-            is_active=bool(row[3]),
-            last_forwarded_signature=row[4],
-        )
-        for row in rows
-    ]
+    return [_route_from_row(row) for row in rows]
 
 
 async def remove_route(db_path: str, route_id: int) -> bool:
@@ -137,29 +221,37 @@ async def remove_route(db_path: str, route_id: int) -> bool:
         return cursor.rowcount > 0
 
 
-async def get_active_routes_by_source(db_path: str, source_chat_id: int) -> list[Route]:
+async def get_active_routes_by_source(
+    db_path: str,
+    source_chat_id: int,
+    source_topic_id: int | None,
+) -> list[Route]:
     async with aiosqlite.connect(db_path) as db:
         rows = await (
             await db.execute(
                 """
-                SELECT id, source_chat_id, destination_chat_id, is_active, last_forwarded_signature
+                SELECT
+                    id,
+                    source_chat_id,
+                    destination_chat_id,
+                    source_topic_id,
+                    destination_topic_id,
+                    is_active,
+                    last_forwarded_signature
                 FROM routes
-                WHERE source_chat_id = ? AND is_active = 1
+                WHERE source_chat_id = ?
+                  AND is_active = 1
+                  AND (
+                    source_topic_id IS NULL
+                    OR source_topic_id = 0
+                    OR source_topic_id = ?
+                  )
                 ORDER BY id ASC
                 """,
-                (source_chat_id,),
+                (source_chat_id, source_topic_id),
             )
         ).fetchall()
-    return [
-        Route(
-            id=row[0],
-            source_chat_id=row[1],
-            destination_chat_id=row[2],
-            is_active=bool(row[3]),
-            last_forwarded_signature=row[4],
-        )
-        for row in rows
-    ]
+    return [_route_from_row(row) for row in rows]
 
 
 async def cache_message(db_path: str, chat_id: int, message_id: int) -> None:
@@ -190,26 +282,6 @@ async def trim_cache(db_path: str, chat_id: int, keep_last: int = 20) -> None:
             (chat_id, chat_id, keep_last),
         )
         await db.commit()
-
-
-async def get_latest_cached_message_ids(
-    db_path: str,
-    chat_id: int,
-    limit: int = 2,
-) -> list[int]:
-    async with aiosqlite.connect(db_path) as db:
-        rows = await (
-            await db.execute(
-                """
-                SELECT message_id FROM message_cache
-                WHERE chat_id = ?
-                ORDER BY message_id DESC
-                LIMIT ?
-                """,
-                (chat_id, limit),
-            )
-        ).fetchall()
-    return sorted(int(row[0]) for row in rows)
 
 
 async def update_route_last_forwarded_signature(

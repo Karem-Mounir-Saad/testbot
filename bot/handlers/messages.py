@@ -23,6 +23,7 @@ async def listen_group_messages(message: Message) -> None:
         bot=message.bot,
         db_path=settings.db_path,
         source_chat_id=message.chat.id,
+        source_topic_id=message.message_thread_id,
         message_id=message.message_id,
     )
 
@@ -41,6 +42,7 @@ async def listen_channel_posts(message: Message) -> None:
         bot=message.bot,
         db_path=settings.db_path,
         source_chat_id=message.chat.id,
+        source_topic_id=message.message_thread_id,
         message_id=message.message_id,
     )
 

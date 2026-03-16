@@ -80,10 +80,17 @@ Use these in private chat with the bot:
   - shows usage/help
 
 - `/add_route <source_chat_id> <destination_chat_id>`
-  - adds or re-activates a route
+  - adds or re-activates a chat-level route
+
+- `/add_route <source_chat_id> <destination_chat_id> <source_topic_id> <destination_topic_id>`
+  - adds or re-activates a topic-aware route
+  - use `-` for no topic in either side
 
 - `/list_routes`
   - lists configured routes
+
+- `/chat_id`
+  - shows current chat id/type and topic id (`message_thread_id`)
 
 - `/remove_route <route_id>`
   - deletes route by id

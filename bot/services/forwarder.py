@@ -39,6 +39,7 @@ async def _forward_for_route(
             chat_id=route.destination_chat_id,
             from_chat_id=route.source_chat_id,
             message_id=source_message_id,
+            message_thread_id=route.destination_topic_id,
         )
 
         await upsert_message_link(
@@ -88,14 +89,16 @@ async def process_source_message(
     bot: Bot,
     db_path: str,
     source_chat_id: int,
+    source_topic_id: int | None,
     message_id: int,
 ) -> None:
     logger.info(
-        "Processing source message: source_chat_id={} message_id={}",
+        "Processing source message: source_chat_id={} source_topic_id={} message_id={}",
         source_chat_id,
+        source_topic_id,
         message_id,
     )
-    routes = await get_active_routes_by_source(db_path, source_chat_id)
+    routes = await get_active_routes_by_source(db_path, source_chat_id, source_topic_id)
     if not routes:
         logger.info("No active routes for source_chat_id={}", source_chat_id)
         return
@@ -155,6 +158,7 @@ async def _replace_destination_copy_for_edit(
             chat_id=route.destination_chat_id,
             from_chat_id=route.source_chat_id,
             message_id=source_message_id,
+            message_thread_id=route.destination_topic_id,
         )
 
         await upsert_message_link(
@@ -296,7 +300,8 @@ async def sync_edited_source_message(
         source_message_id,
     )
 
-    routes = await get_active_routes_by_source(db_path, source_chat_id)
+    source_topic_id = source_message.message_thread_id
+    routes = await get_active_routes_by_source(db_path, source_chat_id, source_topic_id)
     if not routes:
         logger.info("No active routes for edited source_chat_id={}", source_chat_id)
         return
@@ -405,6 +410,8 @@ async def delete_copies_for_source_message(
         source_message_id,
         source_chat_id,
     )
+
+
 
 
 

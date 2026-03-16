@@ -19,7 +19,7 @@ def _help_text() -> str:
         "Forward bot is running.\n\n"
         "Owner commands:\n"
         "/chat_id\n"
-        "/add_route &lt;source_chat_id&gt; &lt;destination_chat_id&gt;\n"
+        "/add_route &lt;source_chat_id&gt; &lt;destination_chat_id&gt; [source_topic_id] [destination_topic_id]\n"
         "/list_routes\n"
         "/remove_route &lt;route_id&gt;\n\n"
         "Behavior:\n"
@@ -28,14 +28,36 @@ def _help_text() -> str:
     )
 
 
-def _parse_two_ints(text: str) -> tuple[int, int] | None:
-    parts = text.split(maxsplit=2)
-    if len(parts) != 3:
+def _parse_optional_int(raw_value: str) -> int | None:
+    value = raw_value.strip().lower()
+    if value in {"-", "none", "null"}:
         return None
     try:
-        return int(parts[1]), int(parts[2])
+        return int(value)
     except ValueError:
         return None
+
+
+def _parse_route_args(text: str) -> tuple[int, int, int | None, int | None] | None:
+    parts = text.split()
+    if len(parts) not in {3, 5}:
+        return None
+    try:
+        source_chat_id = int(parts[1])
+        destination_chat_id = int(parts[2])
+    except ValueError:
+        return None
+
+    if len(parts) == 3:
+        return source_chat_id, destination_chat_id, None, None
+
+    source_topic_id = _parse_optional_int(parts[3])
+    destination_topic_id = _parse_optional_int(parts[4])
+    if parts[3].strip() and source_topic_id is None and parts[3].strip().lower() not in {"-", "none", "null"}:
+        return None
+    if parts[4].strip() and destination_topic_id is None and parts[4].strip().lower() not in {"-", "none", "null"}:
+        return None
+    return source_chat_id, destination_chat_id, source_topic_id, destination_topic_id
 
 
 def _parse_one_int(text: str) -> int | None:
@@ -73,7 +95,8 @@ async def chat_id_handler(message: Message) -> None:
     await message.answer(
         "Current chat info:\n"
         f"- chat_id: <code>{message.chat.id}</code>\n"
-        f"- chat_type: <code>{message.chat.type}</code>"
+        f"- chat_type: <code>{message.chat.type}</code>\n"
+        f"- topic_id (message_thread_id): <code>{message.message_thread_id}</code>"
     )
 
 
@@ -82,17 +105,31 @@ async def add_route_handler(message: Message) -> None:
     if not _is_owner(message):
         return
 
-    parsed = _parse_two_ints(message.text or "")
+    parsed = _parse_route_args(message.text or "")
     if parsed is None:
         await message.answer(
-            "Usage: /add_route &lt;source_chat_id&gt; &lt;destination_chat_id&gt;"
+            "Usage: /add_route &lt;source_chat_id&gt; &lt;destination_chat_id&gt; "
+            "[source_topic_id] [destination_topic_id]\n"
+            "Tip: use '-' for no topic"
         )
         return
 
-    source_chat_id, destination_chat_id = parsed
-    route_id = await add_route(settings.db_path, source_chat_id, destination_chat_id)
+    source_chat_id, destination_chat_id, source_topic_id, destination_topic_id = parsed
+    route_id = await add_route(
+        settings.db_path,
+        source_chat_id,
+        destination_chat_id,
+        source_topic_id,
+        destination_topic_id,
+    )
+    source_topic_text = "*" if source_topic_id is None else str(source_topic_id)
+    destination_topic_text = "*" if destination_topic_id is None else str(
+        destination_topic_id
+    )
     await message.answer(
-        f"Route saved (#{route_id}): {source_chat_id} -> {destination_chat_id}"
+        "Route saved "
+        f"(#{route_id}): {source_chat_id}[topic:{source_topic_text}] "
+        f"-> {destination_chat_id}[topic:{destination_topic_text}]"
     )
 
 
@@ -109,8 +146,13 @@ async def list_routes_handler(message: Message) -> None:
     lines = ["Configured routes:"]
     for route in routes:
         status = "active" if route.is_active else "inactive"
+        source_topic = "*" if route.source_topic_id is None else route.source_topic_id
+        destination_topic = (
+            "*" if route.destination_topic_id is None else route.destination_topic_id
+        )
         lines.append(
-            f"#{route.id} | {route.source_chat_id} -> {route.destination_chat_id} | {status}"
+            f"#{route.id} | {route.source_chat_id}[topic:{source_topic}] "
+            f"-> {route.destination_chat_id}[topic:{destination_topic}] | {status}"
         )
     await message.answer("\n".join(lines))
 
