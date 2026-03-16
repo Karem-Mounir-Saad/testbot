@@ -57,6 +57,7 @@ Use `.env` (copied from `.env.example`):
 
 - `BOT_TOKEN` — token from @BotFather
 - `OWNER_ID` — Telegram numeric user ID allowed to manage routes
+- `ROUTE_MANAGER_IDS` — optional comma-separated manager user IDs (can manage only their own routes)
 - `DATABASE_URL` — SQLite URL, e.g. `sqlite:///bot.db`
 - `LOG_LEVEL` — e.g. `INFO`
 
@@ -72,9 +73,26 @@ Optional for realtime delete sync via Telethon (MTProto listener):
 
 ---
 
-## Owner Commands
+## Route Management Permissions
 
-Use these in private chat with the bot:
+- **Owner**
+  - can add routes
+  - can list all routes
+  - can remove any route
+  - can remove all routes (`/remove_all_routes`)
+
+- **Route Manager** (configured via `ROUTE_MANAGER_IDS`)
+  - can add routes
+  - can list only routes they created
+  - can remove only routes they created
+
+On startup, manager IDs from `.env` are synced into DB (`route_managers`).
+
+---
+
+## Commands
+
+Use these in private chat with the bot (owner + route managers unless noted):
 
 - `/start`
   - shows usage/help
@@ -87,13 +105,19 @@ Use these in private chat with the bot:
   - use `-` for no topic in either side
 
 - `/list_routes`
-  - lists configured routes
+  - owner: lists all routes
+  - manager: lists only own routes
 
 - `/chat_id`
   - shows current chat id/type and topic id (`message_thread_id`)
 
 - `/remove_route <route_id>`
-  - deletes route by id
+  - owner: removes any route by id
+  - manager: removes only own route by id
+
+- `/remove_all_routes`
+  - owner-only
+  - removes all routes
 
 ---
 
@@ -101,7 +125,11 @@ Use these in private chat with the bot:
 
 - `routes`
   - route configuration
+  - includes `created_by_user_id` ownership field
   - last forwarded signature per route
+
+- `route_managers`
+  - manager authorization list synced from `.env`
 
 - `message_cache`
   - cached source message IDs

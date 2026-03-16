@@ -10,13 +10,14 @@ class Settings:
     db_path: str
     log_level: str
     owner_id: int
+    route_manager_ids: tuple[int, ...]
     telethon_api_id: int | None
     telethon_api_hash: str | None
     telethon_session: str
     telethon_watch_chat_ids: tuple[int, ...]
 
 
-def _parse_chat_ids(raw_value: str) -> tuple[int, ...]:
+def _parse_chat_ids(raw_value: str, var_name: str) -> tuple[int, ...]:
     cleaned = raw_value.strip()
     if not cleaned:
         return tuple()
@@ -30,7 +31,7 @@ def _parse_chat_ids(raw_value: str) -> tuple[int, ...]:
             values.append(int(item))
         except ValueError as exc:
             raise ValueError(
-                "TELETHON_WATCH_CHAT_IDS must be a comma-separated list of integers"
+                f"{var_name} must be a comma-separated list of integers"
             ) from exc
     return tuple(values)
 
@@ -61,11 +62,17 @@ def get_settings() -> Settings:
     except ValueError as exc:
         raise ValueError("OWNER_ID must be an integer Telegram user id") from exc
 
+    route_manager_ids = _parse_chat_ids(
+        os.getenv("ROUTE_MANAGER_IDS", ""),
+        "ROUTE_MANAGER_IDS",
+    )
+
     telethon_api_id_raw = os.getenv("TELETHON_API_ID", "").strip()
     telethon_api_hash = os.getenv("TELETHON_API_HASH", "").strip() or None
     telethon_session = os.getenv("TELETHON_SESSION", "telethon_session").strip()
     telethon_watch_chat_ids = _parse_chat_ids(
-        os.getenv("TELETHON_WATCH_CHAT_IDS", "")
+        os.getenv("TELETHON_WATCH_CHAT_IDS", ""),
+        "TELETHON_WATCH_CHAT_IDS",
     )
 
     if bool(telethon_api_id_raw) != bool(telethon_api_hash):
@@ -85,6 +92,7 @@ def get_settings() -> Settings:
         db_path=db_path,
         log_level=log_level,
         owner_id=owner_id,
+        route_manager_ids=route_manager_ids,
         telethon_api_id=telethon_api_id,
         telethon_api_hash=telethon_api_hash,
         telethon_session=telethon_session,

@@ -8,7 +8,7 @@ from aiogram.enums import ParseMode
 from loguru import logger
 
 from bot.config import get_settings
-from bot.database.db import init_db
+from bot.database.db import init_db, sync_route_managers_from_env
 from bot.handlers.commands import router as commands_router
 from bot.handlers.messages import router as messages_router
 from bot.services.mtproto_listener import run_mtproto_delete_listener
@@ -20,7 +20,11 @@ async def main() -> None:
     logger.remove()
     logger.add(sys.stdout, level=settings.log_level)
 
-    await init_db(settings.db_path)
+    await init_db(settings.db_path, owner_id=settings.owner_id)
+    await sync_route_managers_from_env(
+        settings.db_path,
+        settings.route_manager_ids,
+    )
 
     bot = Bot(
         token=settings.bot_token,
